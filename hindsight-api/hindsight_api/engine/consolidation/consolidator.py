@@ -582,13 +582,36 @@ async def _process_memory_batch(
 
     # 3. Single LLM call
     t0 = time.time()
-    llm_result = await _consolidate_batch_with_llm(
-        llm_config=llm_config,
-        memories=memories,
-        union_observations=union_observations,
-        union_source_facts=union_source_facts,
-        config=config,
-    )
+    if llm_config.provider == "claude-code":
+        from .claude_agent import claude_consolidate_agent
+
+        if union_observations:
+            obs_list = _build_observations_for_llm(union_observations, union_source_facts)
+            observations_text = json.dumps(obs_list, indent=2)
+        else:
+            observations_text = "[]"
+
+        observations_mission = config.observations_mission if config is not None else None
+        raw = await claude_consolidate_agent(
+            memories=memories,
+            observations_text=observations_text,
+            observations_mission=observations_mission,
+        )
+        llm_result = _BatchLLMResult(
+            creates=[_CreateAction(**c) for c in raw.get("creates", [])],
+            updates=[_UpdateAction(**u) for u in raw.get("updates", [])],
+            deletes=[_DeleteAction(**d) for d in raw.get("deletes", [])],
+            obs_count=len(union_observations),
+            prompt_chars=len(observations_text),
+        )
+    else:
+        llm_result = await _consolidate_batch_with_llm(
+            llm_config=llm_config,
+            memories=memories,
+            union_observations=union_observations,
+            union_source_facts=union_source_facts,
+            config=config,
+        )
     if perf:
         perf.record_timing("llm", time.time() - t0)
         perf.record_llm_call(llm_result.obs_count, llm_result.prompt_chars)

@@ -8,33 +8,16 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Awaitable, Callable
-
-from claude_agent_sdk import (
-    AssistantMessage,
-    ClaudeAgentOptions,
-    ClaudeSDKClient,
-    ResultMessage,
-    SdkMcpTool,
-    TextBlock,
-    create_sdk_mcp_server,
-)
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from ..claude_sdk_utils import get_claude_sdk_semaphore
+
+if TYPE_CHECKING:
+    from ..llm_wrapper import LLMProvider
 from .models import ReflectAgentResult, ToolCall
 from .prompts import build_system_prompt_for_tools
 
 logger = logging.getLogger(__name__)
-
-_semaphore_instance: Any = None
-
-
-def _get_semaphore() -> Any:
-    global _semaphore_instance
-    if _semaphore_instance is None:
-        _semaphore_instance = get_claude_sdk_semaphore()
-    return _semaphore_instance
-
 
 def _extract_ids_from_results(data: dict, key: str, id_field: str = "id") -> set[str]:
     """Extract IDs from tool result dict."""
@@ -58,8 +41,9 @@ def build_reflect_tools(
     available_observation_ids: set[str],
     tool_trace: list[ToolCall],
     result_holder: list[ReflectAgentResult],
-) -> list[SdkMcpTool]:
+) -> list[Any]:
     """Build real MCP tool handlers as closures capturing shared mutable state."""
+    from claude_agent_sdk import SdkMcpTool
 
     async def search_mental_models_handler(args: dict) -> str:
         query = str(args.get("query", ""))
@@ -169,6 +153,7 @@ def build_reflect_tools(
             used_observation_ids=list(cited_observation_ids & available_observation_ids),
             tool_trace=list(tool_trace),
             tools_called=len(tool_trace),
+            iterations=len(tool_trace),
         )
         result_holder.append(result)
         return "Answer accepted."
@@ -210,6 +195,8 @@ async def claude_reflect_agent(
     context: str | None = None,
     max_iterations: int = 10,
     max_tokens: int | None = None,
+    response_schema: dict | None = None,
+    llm_config: LLMProvider | None = None,
     directives: list[dict[str, Any]] | None = None,
     has_mental_models: bool = False,
     budget: str | None = None,
@@ -218,6 +205,15 @@ async def claude_reflect_agent(
 
     Creates a ClaudeSDKClient per call. SDK auto-loops tool calls until done() is called.
     """
+    from claude_agent_sdk import (
+        AssistantMessage,
+        ClaudeAgentOptions,
+        ClaudeSDKClient,
+        ResultMessage,
+        TextBlock,
+        create_sdk_mcp_server,
+    )
+
     # Shared mutable state for closures
     available_memory_ids: set[str] = set()
     available_mental_model_ids: set[str] = set()
@@ -263,7 +259,7 @@ async def claude_reflect_agent(
 
     fallback_text = ""
 
-    async with _get_semaphore():
+    async with get_claude_sdk_semaphore():
         async with ClaudeSDKClient(options=options) as client:
             await client.query(query)
             async for msg in client.receive_messages():
@@ -277,15 +273,30 @@ async def claude_reflect_agent(
 
     # Return result from done() handler, or fallback
     if result_holder:
-        return result_holder[0]
+        result = result_holder[0]
+    else:
+        # Fallback: max_turns hit without done() — use last assistant text
+        logger.warning("Claude reflect agent hit max_turns without calling done()")
+        result = ReflectAgentResult(
+            text=fallback_text.strip() if fallback_text else "I could not find relevant information.",
+            used_memory_ids=list(available_memory_ids),
+            used_mental_model_ids=list(available_mental_model_ids),
+            used_observation_ids=list(available_observation_ids),
+            tool_trace=tool_trace,
+            tools_called=len(tool_trace),
+            iterations=len(tool_trace),
+        )
 
-    # Fallback: max_turns hit without done() — use last assistant text
-    logger.warning("Claude reflect agent hit max_turns without calling done()")
-    return ReflectAgentResult(
-        text=fallback_text.strip() if fallback_text else "I could not find relevant information.",
-        used_memory_ids=list(available_memory_ids),
-        used_mental_model_ids=list(available_mental_model_ids),
-        used_observation_ids=list(available_observation_ids),
-        tool_trace=tool_trace,
-        tools_called=len(tool_trace),
-    )
+    # Generate structured output if response_schema provided (matches non-SDK path behavior)
+    if response_schema and llm_config and result.text:
+        try:
+            from .agent import _generate_structured_output
+
+            structured_output, _, _ = await _generate_structured_output(
+                result.text, response_schema, llm_config, "claude-sdk"
+            )
+            result.structured_output = structured_output
+        except Exception as exc:
+            logger.warning(f"Claude reflect agent structured output failed: {exc}")
+
+    return result

@@ -1,47 +1,31 @@
 """Claude Agent SDK retain agent with real extract_facts tool handler."""
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime
 from typing import Any
 
-from claude_agent_sdk import (
-    ClaudeAgentOptions,
-    ClaudeSDKClient,
-    ResultMessage,
-    SdkMcpTool,
-    create_sdk_mcp_server,
-)
-
 from ..claude_sdk_utils import get_claude_sdk_semaphore
-from .fact_extraction import Fact, chunk_text, _build_user_message
+from .fact_extraction import Entity, Fact, chunk_text, _build_user_message
 from .types import ChunkMetadata
 
 logger = logging.getLogger(__name__)
-
-_semaphore: asyncio.Semaphore | None = None
-
-
-def _get_semaphore() -> asyncio.Semaphore:
-    global _semaphore
-    if _semaphore is None:
-        _semaphore = get_claude_sdk_semaphore()
-    return _semaphore
 
 
 def build_extract_facts_tool(
     *,
     all_facts: list[Fact],
     chunk_metadata: list[ChunkMetadata],
-) -> SdkMcpTool:
+) -> Any:
     """Build extract_facts tool with lenient handler.
 
     Handler does permissive parsing:
     - Accepts "what" or "factual_core" as the fact text field
     - Auto-fixes invalid fact_type to "world"
+    - Parses optional fields: occurred_start/end, where, entities
     - Skips malformed entries (no "what" field)
     """
+    from claude_agent_sdk import SdkMcpTool
 
     async def handler(args: dict[str, Any]) -> str:
         raw_facts = args.get("facts", [])
@@ -55,8 +39,25 @@ def build_extract_facts_tool(
             fact_type = fact_data.get("fact_type", "world")
             if fact_type not in ("world", "experience", "opinion"):
                 fact_type = "world"
+
+            # Parse optional fields
+            entities = None
+            raw_entities = fact_data.get("entities")
+            if isinstance(raw_entities, list):
+                entities = [Entity(text=str(e)) for e in raw_entities if e]
+
             try:
-                fact = Fact(fact=str(what), fact_type=fact_type)
+                # causal_relations intentionally omitted — requires cross-fact index
+                # references that are unreliable in tool-call output. The integration
+                # layer defaults to [] which is safe.
+                fact = Fact(
+                    fact=str(what),
+                    fact_type=fact_type,
+                    occurred_start=fact_data.get("occurred_start"),
+                    occurred_end=fact_data.get("occurred_end"),
+                    where=fact_data.get("where"),
+                    entities=entities,
+                )
                 parsed.append(fact)
             except Exception:
                 continue
@@ -84,10 +85,33 @@ def build_extract_facts_tool(
                     "items": {
                         "type": "object",
                         "properties": {
-                            "what": {"type": "string", "description": "The factual statement"},
+                            "what": {
+                                "type": "string",
+                                "description": "Core fact - concise but complete (1-2 sentences). "
+                                "Include who, when, where, why details inline.",
+                            },
                             "fact_type": {
                                 "type": "string",
                                 "enum": ["world", "experience", "opinion"],
+                                "description": "'world' = objective facts, 'experience' = personal experiences, "
+                                "'opinion' = subjective views",
+                            },
+                            "occurred_start": {
+                                "type": ["string", "null"],
+                                "description": "ISO 8601 timestamp when the event started, if known. null otherwise.",
+                            },
+                            "occurred_end": {
+                                "type": ["string", "null"],
+                                "description": "ISO 8601 timestamp when the event ended, if known. null otherwise.",
+                            },
+                            "where": {
+                                "type": ["string", "null"],
+                                "description": "Location where the fact occurred, if relevant. null otherwise.",
+                            },
+                            "entities": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Named entities: people, places, organizations, concepts mentioned.",
                             },
                         },
                         "required": ["what"],
@@ -110,6 +134,13 @@ async def claude_retain_agent(
     metadata: dict[str, str] | None = None,
 ) -> tuple[list[Fact], list[ChunkMetadata], dict[str, Any]]:
     """Run retain using Claude SDK with sequential chunks in same session."""
+    from claude_agent_sdk import (
+        ClaudeAgentOptions,
+        ClaudeSDKClient,
+        ResultMessage,
+        create_sdk_mcp_server,
+    )
+
     chunks = chunk_text(text, max_chars=config.retain_chunk_size)
     all_facts: list[Fact] = []
     chunk_metadata: list[ChunkMetadata] = []
@@ -121,7 +152,9 @@ async def claude_retain_agent(
         getattr(config, "retain_system_prompt", None)
         or (
             "You are a fact extraction system. Extract significant facts from text chunks. "
-            "Call extract_facts with the extracted facts for each chunk."
+            "Call extract_facts with the extracted facts for each chunk. "
+            "For each fact, extract: the core statement (what), fact_type, temporal info "
+            "(occurred_start/end as ISO timestamps), location (where), and named entities."
         )
     )
 
@@ -132,7 +165,7 @@ async def claude_retain_agent(
         allowed_tools=["mcp__hindsight_retain__extract_facts"],
     )
 
-    async with _get_semaphore():
+    async with get_claude_sdk_semaphore():
         async with ClaudeSDKClient(options=options) as client:
             for i, chunk in enumerate(chunks):
                 user_msg = _build_user_message(
@@ -144,7 +177,7 @@ async def claude_retain_agent(
                     metadata=metadata,
                 )
                 await client.query(user_msg)
-                async for msg in client.receive_response():
+                async for msg in client.receive_messages():
                     if isinstance(msg, ResultMessage):
                         break
 

@@ -4566,24 +4566,44 @@ class MemoryEngine(MemoryEngineInterface):
             span_context = None
 
         try:
-            agent_result = await run_reflect_agent(
-                llm_config=self._reflect_llm_config.with_config(resolved_reflect_config),
-                bank_id=bank_id,
-                query=query,
-                bank_profile=profile,
-                search_mental_models_fn=search_mental_models_fn,
-                search_observations_fn=search_observations_fn,
-                recall_fn=recall_fn,
-                expand_fn=expand_fn,
-                context=context,
-                max_iterations=max_iterations,
-                max_tokens=max_tokens,
-                response_schema=response_schema,
-                directives=directives,
-                has_mental_models=has_mental_models,
-                budget=effective_budget,
-                max_context_tokens=max_context_tokens,
-            )
+            if self._reflect_llm_config.provider == "claude-code":
+                from .reflect.claude_agent import claude_reflect_agent
+
+                agent_result = await claude_reflect_agent(
+                    query=query,
+                    bank_profile=profile,
+                    search_mental_models_fn=search_mental_models_fn,
+                    search_observations_fn=search_observations_fn,
+                    recall_fn=recall_fn,
+                    expand_fn=expand_fn,
+                    context=context,
+                    max_iterations=max_iterations,
+                    max_tokens=max_tokens,
+                    response_schema=response_schema,
+                    llm_config=self._reflect_llm_config.with_config(resolved_reflect_config),
+                    directives=directives,
+                    has_mental_models=has_mental_models,
+                    budget=effective_budget,
+                )
+            else:
+                agent_result = await run_reflect_agent(
+                    llm_config=self._reflect_llm_config.with_config(resolved_reflect_config),
+                    bank_id=bank_id,
+                    query=query,
+                    bank_profile=profile,
+                    search_mental_models_fn=search_mental_models_fn,
+                    search_observations_fn=search_observations_fn,
+                    recall_fn=recall_fn,
+                    expand_fn=expand_fn,
+                    context=context,
+                    max_iterations=max_iterations,
+                    max_tokens=max_tokens,
+                    response_schema=response_schema,
+                    directives=directives,
+                    has_mental_models=has_mental_models,
+                    budget=effective_budget,
+                    max_context_tokens=max_context_tokens,
+                )
 
             total_time = time.time() - reflect_start
             logger.info(

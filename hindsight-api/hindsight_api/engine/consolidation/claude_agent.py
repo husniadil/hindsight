@@ -7,23 +7,12 @@ its consolidation decisions.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
+from ..claude_sdk_utils import get_claude_sdk_semaphore
+
 logger = logging.getLogger(__name__)
-
-_semaphore: asyncio.Semaphore | None = None
-
-
-def _get_semaphore() -> asyncio.Semaphore:
-    global _semaphore
-    if _semaphore is None:
-        from ..claude_sdk_utils import get_claude_sdk_semaphore
-
-        _semaphore = get_claude_sdk_semaphore()
-    return _semaphore
-
 
 def build_consolidate_tool(*, result_holder: list[dict[str, Any]]) -> Any:
     """Build a consolidate MCP tool that captures Claude's consolidation decisions.
@@ -226,10 +215,10 @@ async def claude_consolidate_agent(
         allowed_tools=["mcp__hindsight_consolidation__consolidate"],
     )
 
-    async with _get_semaphore():
+    async with get_claude_sdk_semaphore():
         async with ClaudeSDKClient(options=options) as client:
             await client.query(user_message)
-            async for msg in client.receive_response():
+            async for msg in client.receive_messages():
                 if isinstance(msg, ResultMessage):
                     break
 

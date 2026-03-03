@@ -1941,6 +1941,55 @@ async def extract_facts_from_contents(
     if not contents:
         return [], [], TokenUsage()
 
+    # Route to Claude Agent SDK if provider is claude-code
+    if hasattr(llm_config, "provider") and llm_config.provider == "claude-code":
+        from .claude_agent import claude_retain_agent
+
+        all_extracted: list[ExtractedFactType] = []
+        all_chunks: list[ChunkMetadata] = []
+        global_chunk_idx = 0
+        global_fact_idx = 0
+
+        for content_index, content in enumerate(contents):
+            facts, chunk_metas, _ = await claude_retain_agent(
+                text=content.content,
+                event_date=content.event_date,
+                context=content.context,
+                config=config,
+                metadata=content.metadata or None,
+            )
+            for cm in chunk_metas:
+                cm.content_index = content_index
+                cm.chunk_index = global_chunk_idx
+                all_chunks.append(cm)
+                global_chunk_idx += 1
+
+            for fact in facts:
+                extracted = ExtractedFactType(
+                    fact_text=fact.fact,
+                    fact_type=fact.fact_type,
+                    entities=[e.text for e in (fact.entities or [])],
+                    occurred_start=_parse_datetime(fact.occurred_start) if fact.occurred_start else None,
+                    occurred_end=_parse_datetime(fact.occurred_end) if fact.occurred_end else None,
+                    where=fact.where,
+                    causal_relations=_convert_causal_relations(
+                        fact.causal_relations or [], global_fact_idx
+                    ),
+                    content_index=content_index,
+                    chunk_index=0,
+                    context=content.context,
+                    mentioned_at=content.event_date,
+                    metadata=content.metadata or {},
+                    tags=content.tags,
+                    observation_scopes=content.observation_scopes,
+                )
+                all_extracted.append(extracted)
+                global_fact_idx += 1
+
+        _add_temporal_offsets(all_extracted, contents)
+        _inject_label_tags(all_extracted, config)
+        return all_extracted, all_chunks, TokenUsage()
+
     # Route to batch API if enabled
     if config.retain_batch_enabled:
         return await extract_facts_from_contents_batch_api(
