@@ -267,20 +267,17 @@ def build_system_prompt_for_tools(
     if has_mental_models:
         parts.extend(
             [
-                "1. First, try search_mental_models() - check if a curated summary exists",
-                "2. If no mental model or it's stale, try search_observations() for consolidated knowledge",
-                "3. If observations are stale OR you need specific details, use recall() for raw facts",
-                "4. Use expand() if you need more context on specific memories",
-                "5. When ready, call done() with your answer and supporting IDs",
+                "Follow the hierarchical retrieval strategy above. When you have gathered enough evidence:",
+                "- Call done() with your answer and supporting IDs (memory_ids, mental_model_ids, observation_ids)",
+                "- Use expand() anytime you need more context on specific memories",
             ]
         )
     else:
         parts.extend(
             [
-                "1. First, try search_observations() - check for consolidated knowledge",
-                "2. If search_observations returns 0 results OR observations are stale, you MUST call recall() for raw facts",
-                "3. Use expand() if you need more context on specific memories",
-                "4. When ready, call done() with your answer and supporting IDs",
+                "Follow the hierarchical retrieval strategy above. When you have gathered enough evidence:",
+                "- Call done() with your answer and supporting IDs (memory_ids, observation_ids)",
+                "- Use expand() anytime you need more context on specific memories",
             ]
         )
 
@@ -294,7 +291,7 @@ def build_system_prompt_for_tools(
             "- Format for clarity and readability with proper spacing and hierarchy",
             "- NEVER include memory IDs, UUIDs, or 'Memory references' in the answer text",
             "- Put IDs ONLY in the memory_ids/mental_model_ids/observation_ids arrays, not in the answer",
-            "- CRITICAL: This is a NON-CONVERSATIONAL system. NEVER ask follow-up questions, offer further assistance, or suggest next steps. Your answer must be complete and self-contained. The user cannot reply.",
+            "- Do not ask clarifying questions. Gather evidence using the available tools and call done() with your answer.",
         ]
     )
 
