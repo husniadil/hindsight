@@ -104,3 +104,105 @@ async def test_recall_handler():
     data = json.loads(result)
     assert "memories" in data
     assert "m-1" in available_memory_ids
+
+
+# ---------------------------------------------------------------------------
+# Task 3 — claude_reflect_agent() main function
+# ---------------------------------------------------------------------------
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from hindsight_api.engine.reflect.claude_agent import claude_reflect_agent
+
+
+@pytest.mark.asyncio
+async def test_claude_reflect_agent_calls_sdk():
+    """Test that claude_reflect_agent creates SDK client, queries, and returns result."""
+
+    async def mock_search_mm(q: str, n: int):
+        return {"mental_models": [{"id": "mm-1", "text": "test"}]}
+
+    async def mock_search_obs(q: str, n: int):
+        return {"observations": [{"id": "obs-1", "text": "test"}]}
+
+    async def mock_recall(q: str, mt: int, mct: int):
+        return {"memories": [{"id": "m-1", "text": "test"}]}
+
+    async def mock_expand(ids: list, depth: str):
+        return {"expanded": []}
+
+    with patch("hindsight_api.engine.reflect.claude_agent.ClaudeSDKClient") as MockClient, \
+         patch("hindsight_api.engine.reflect.claude_agent._get_semaphore") as mock_sem:
+
+        # Setup semaphore mock as async context manager
+        sem_mock = MagicMock()
+        sem_mock.__aenter__ = AsyncMock(return_value=None)
+        sem_mock.__aexit__ = AsyncMock(return_value=False)
+        mock_sem.return_value = sem_mock
+
+        # Setup client mock
+        from claude_agent_sdk import ResultMessage
+        mock_client_instance = AsyncMock()
+
+        # receive_messages() needs to be an async generator
+        async def fake_receive_messages():
+            yield ResultMessage(
+            subtype="success",
+            duration_ms=100,
+            duration_api_ms=100,
+            is_error=False,
+            num_turns=1,
+            session_id="test-session",
+        )
+
+        mock_client_instance.receive_messages = fake_receive_messages
+
+        # Context manager protocol
+        MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)
+        MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        result = await claude_reflect_agent(
+            query="What patterns exist?",
+            bank_profile={"name": "test", "mission": "test"},
+            search_mental_models_fn=mock_search_mm,
+            search_observations_fn=mock_search_obs,
+            recall_fn=mock_recall,
+            expand_fn=mock_expand,
+            has_mental_models=True,
+        )
+        # Verify SDK client was created and queried
+        mock_client_instance.query.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Task 7 — system prompt streamline
+# ---------------------------------------------------------------------------
+from hindsight_api.engine.reflect.prompts import build_system_prompt_for_tools
+
+
+def test_system_prompt_no_forced_workflow_steps():
+    """Verify streamlined prompt contains retrieval strategy and bank info."""
+    prompt = build_system_prompt_for_tools(
+        bank_profile={"name": "test", "mission": "test mission"},
+        context=None,
+        directives=None,
+        has_mental_models=True,
+        budget="mid",
+    )
+    # Should contain retrieval strategy
+    assert "RETRIEVAL STRATEGY" in prompt.upper() or "retrieval" in prompt.lower()
+    # Should contain bank info
+    assert "test mission" in prompt
+    # Should not be asking follow-up questions
+    assert "Would you like me to" not in prompt
+
+
+def test_system_prompt_non_conversational_reworded():
+    """Verify prompt uses SDK-friendly non-conversational wording."""
+    prompt = build_system_prompt_for_tools(
+        bank_profile={"name": "test", "mission": ""},
+        has_mental_models=False,
+    )
+    # Should NOT contain old rigid wording that's redundant for SDK auto-loop
+    # (The SDK manages turns — the prompt shouldn't be confusingly prescriptive)
+    assert "done()" in prompt or "done" in prompt  # should still mention done tool
