@@ -848,7 +848,7 @@ def _build_extraction_prompt_and_schema(config) -> tuple[str, type]:
     return prompt, response_schema
 
 
-def _build_user_message(
+def build_user_message(
     chunk: str,
     chunk_index: int,
     total_chunks: int,
@@ -941,7 +941,7 @@ async def _extract_facts_from_chunk(
     extract_causal_links = config.retain_extract_causal_links
 
     # Build user message using helper function
-    user_message = _build_user_message(chunk, chunk_index, total_chunks, event_date, context, metadata)
+    user_message = build_user_message(chunk, chunk_index, total_chunks, event_date, context, metadata)
 
     # Retry logic for JSON validation errors
     max_retries = 2
@@ -1536,7 +1536,7 @@ async def extract_facts_from_contents_batch_api(
             custom_id = f"chunk_{len(all_chunks_info) - 1}"  # Global chunk index
 
             # Build user message using helper function
-            user_message = _build_user_message(
+            user_message = build_user_message(
                 chunk, chunk_index_in_content, len(chunks), item.event_date, item.context, item.metadata or None
             )
 

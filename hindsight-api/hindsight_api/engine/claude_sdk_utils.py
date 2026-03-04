@@ -38,7 +38,7 @@ def log_sdk_messages(
 ) -> None:
     """Log Claude Agent SDK messages in a concise format.
 
-    Call this inside the ``async for msg in client.receive_messages()`` loop.
+    Call this inside the ``async for msg in client.receive_response()`` loop.
     Handles AssistantMessage (text/tool_use blocks) and ResultMessage.
     """
     _log = log or logger

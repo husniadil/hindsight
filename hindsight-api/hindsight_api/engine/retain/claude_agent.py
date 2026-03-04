@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from ..claude_sdk_utils import get_claude_sdk_semaphore, log_sdk_messages
-from .fact_extraction import Entity, Fact, chunk_text, _build_user_message
+from .fact_extraction import Entity, Fact, chunk_text, build_user_message
 from .types import ChunkMetadata
 
 logger = logging.getLogger(__name__)
@@ -169,7 +169,7 @@ async def claude_retain_agent(
         async with ClaudeSDKClient(options=options) as client:
             for i, chunk in enumerate(chunks):
                 current_chunk[0] = chunk
-                user_msg = _build_user_message(
+                user_msg = build_user_message(
                     chunk=chunk,
                     chunk_index=i,
                     total_chunks=len(chunks),

@@ -199,8 +199,8 @@ async def claude_reflect_agent(
     recall_fn: Callable[[str, int, int], Awaitable[dict[str, Any]]],
     expand_fn: Callable[[list[str], str], Awaitable[dict[str, Any]]],
     context: str | None = None,
-    max_iterations: int = 10,
-    max_tokens: int | None = None,
+    max_iterations: int = 10,  # accepted for API parity; SDK manages turns internally
+    max_tokens: int | None = None,  # accepted for API parity; not used by SDK path
     response_schema: dict | None = None,
     llm_config: LLMProvider | None = None,
     directives: list[dict[str, Any]] | None = None,
