@@ -257,9 +257,10 @@ async def claude_reflect_agent(
     )
 
     # Budget: reserve 1 iteration for synthesis (done call), rest for search tools.
-    # max_turns adds buffer for done() call + potential retries.
+    # max_turns uses 3x multiplier to accommodate built-in tool calls (Read, Grep,
+    # Bash) that the agent uses to access large tool results from transcript files.
     max_search_calls = max(1, max_iterations - 1)
-    max_turns = max_iterations + 2
+    max_turns = max_iterations * 3
 
     # Shared mutable state for closures
     available_memory_ids: set[str] = set()
