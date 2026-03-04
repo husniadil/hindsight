@@ -160,7 +160,6 @@ async def claude_retain_agent(
 
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
-        max_turns=2,  # per query: read chunk → call extract_facts
         mcp_servers={"hindsight_retain": mcp_server},
         allowed_tools=["mcp__hindsight_retain__extract_facts"],
     )

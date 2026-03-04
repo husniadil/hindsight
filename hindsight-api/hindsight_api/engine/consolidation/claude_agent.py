@@ -217,7 +217,6 @@ async def claude_consolidate_agent(
 
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
-        max_turns=3,
         mcp_servers={"hindsight_consolidation": mcp_server},
         allowed_tools=["mcp__hindsight_consolidation__consolidate"],
     )
