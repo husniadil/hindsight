@@ -84,24 +84,13 @@ class ClaudeCodeLLM(LLMInterface):
 
     async def verify_connection(self) -> None:
         """
-        Verify that the Claude Code provider is configured correctly by making a simple test call.
+        Verify that the Claude Code provider is configured correctly.
 
-        Raises:
-            RuntimeError: If the connection test fails.
+        For claude-code, __init__ already validates SDK import and availability.
+        Authentication is checked lazily by the SDK on first real call, so we
+        skip sending a wasteful "test" prompt that burns tokens for no benefit.
         """
-        try:
-            test_messages = [{"role": "user", "content": "test"}]
-            await self.call(
-                messages=test_messages,
-                max_completion_tokens=10,
-                temperature=0.0,
-                scope="verification",
-                max_retries=0,
-            )
-            logger.info("Claude Code connection verified successfully")
-        except Exception as e:
-            logger.error(f"Claude Code connection verification failed: {e}")
-            raise RuntimeError(f"Failed to verify Claude Code connection: {e}") from e
+        logger.info("Claude Code connection verified (SDK import check passed in __init__)")
 
     async def call(
         self,
