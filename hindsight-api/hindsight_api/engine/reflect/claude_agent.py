@@ -19,6 +19,12 @@ from .prompts import build_system_prompt_for_tools
 
 logger = logging.getLogger(__name__)
 
+
+def _text_result(text: str) -> dict[str, Any]:
+    """Return SDK-compatible tool result dict."""
+    return {"content": [{"type": "text", "text": text}]}
+
+
 def _extract_ids_from_results(data: dict, key: str, id_field: str = "id") -> set[str]:
     """Extract IDs from tool result dict."""
     ids: set[str] = set()
@@ -45,7 +51,7 @@ def build_reflect_tools(
     """Build real MCP tool handlers as closures capturing shared mutable state."""
     from claude_agent_sdk import SdkMcpTool
 
-    async def search_mental_models_handler(args: dict) -> str:
+    async def search_mental_models_handler(args: dict) -> dict[str, Any]:
         query = str(args.get("query", ""))
         max_results = int(args.get("max_results", 5))
         reason = str(args.get("reason", ""))
@@ -62,12 +68,12 @@ def build_reflect_tools(
                 duration_ms=int((time.time() - t0) * 1000),
                 iteration=len(tool_trace),
             ))
-            return json.dumps(data, default=str)
+            return _text_result(json.dumps(data, default=str))
         except Exception as exc:
             logger.warning(f"search_mental_models error: {exc}")
-            return json.dumps({"error": str(exc)})
+            return _text_result(json.dumps({"error": str(exc)}))
 
-    async def search_observations_handler(args: dict) -> str:
+    async def search_observations_handler(args: dict) -> dict[str, Any]:
         query = str(args.get("query", ""))
         max_tokens = int(args.get("max_tokens", 5000))
         reason = str(args.get("reason", ""))
@@ -84,12 +90,12 @@ def build_reflect_tools(
                 duration_ms=int((time.time() - t0) * 1000),
                 iteration=len(tool_trace),
             ))
-            return json.dumps(data, default=str)
+            return _text_result(json.dumps(data, default=str))
         except Exception as exc:
             logger.warning(f"search_observations error: {exc}")
-            return json.dumps({"error": str(exc)})
+            return _text_result(json.dumps({"error": str(exc)}))
 
-    async def recall_handler(args: dict) -> str:
+    async def recall_handler(args: dict) -> dict[str, Any]:
         query = str(args.get("query", ""))
         max_tokens = int(args.get("max_tokens", 2048))
         max_chunk_tokens = int(args.get("max_chunk_tokens", 1000))
@@ -107,12 +113,12 @@ def build_reflect_tools(
                 duration_ms=int((time.time() - t0) * 1000),
                 iteration=len(tool_trace),
             ))
-            return json.dumps(data, default=str)
+            return _text_result(json.dumps(data, default=str))
         except Exception as exc:
             logger.warning(f"recall error: {exc}")
-            return json.dumps({"error": str(exc)})
+            return _text_result(json.dumps({"error": str(exc)}))
 
-    async def expand_handler(args: dict) -> str:
+    async def expand_handler(args: dict) -> dict[str, Any]:
         memory_ids = args.get("memory_ids", [])
         depth = str(args.get("depth", "chunk"))
         reason = str(args.get("reason", ""))
@@ -127,18 +133,18 @@ def build_reflect_tools(
                 duration_ms=int((time.time() - t0) * 1000),
                 iteration=len(tool_trace),
             ))
-            return json.dumps(data, default=str)
+            return _text_result(json.dumps(data, default=str))
         except Exception as exc:
             logger.warning(f"expand error: {exc}")
-            return json.dumps({"error": str(exc)})
+            return _text_result(json.dumps({"error": str(exc)}))
 
-    async def done_handler(args: dict) -> str:
+    async def done_handler(args: dict) -> dict[str, Any]:
         # Block if no evidence gathered
         if not available_memory_ids and not available_mental_model_ids and not available_observation_ids:
-            return json.dumps({
+            return _text_result(json.dumps({
                 "error": "You must search for information first. "
                 "Use search_mental_models(), search_observations(), or recall() before providing your final answer."
-            })
+            }))
 
         answer = str(args.get("answer", ""))
         # Validate cited IDs against available sets
@@ -156,7 +162,7 @@ def build_reflect_tools(
             iterations=len(tool_trace),
         )
         result_holder.append(result)
-        return "Answer accepted."
+        return _text_result("Answer accepted.")
 
     # Import tool schemas from existing module and build SdkMcpTool list
     from ..reflect.tools_schema import get_reflect_tools
@@ -252,7 +258,6 @@ async def claude_reflect_agent(
 
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
-        max_turns=max_iterations + 2,  # buffer for done()
         mcp_servers={"hindsight": mcp_server},
         allowed_tools=[f"mcp__hindsight__{t.name}" for t in sdk_tools],
     )
