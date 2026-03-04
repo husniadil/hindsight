@@ -113,6 +113,96 @@ async def test_recall_handler():
     assert "m-1" in available_memory_ids
 
 
+@pytest.mark.asyncio
+async def test_budget_gate_blocks_after_max_search_calls():
+    """Tools return budget-exhausted message after max_search_calls reached."""
+    tool_trace: list = []
+
+    async def mock_recall(query: str, max_tokens: int, max_chunk_tokens: int):
+        return {"memories": [{"id": f"m-{len(tool_trace)}", "text": "fact"}]}
+
+    tools = build_reflect_tools(
+        search_mental_models_fn=None,
+        search_observations_fn=None,
+        recall_fn=mock_recall,
+        expand_fn=None,
+        available_memory_ids=set(),
+        available_mental_model_ids=set(),
+        available_observation_ids=set(),
+        tool_trace=tool_trace,
+        result_holder=[],
+        max_search_calls=2,
+    )
+    recall_tool = next(t for t in tools if t.name == "recall")
+
+    # First 2 calls should succeed
+    r1 = await recall_tool.handler({"reason": "t", "query": "q1"})
+    assert "memories" in _extract_text(r1)
+    r2 = await recall_tool.handler({"reason": "t", "query": "q2"})
+    assert "memories" in _extract_text(r2)
+
+    # 3rd call should be gated
+    r3 = await recall_tool.handler({"reason": "t", "query": "q3"})
+    text = _extract_text(r3)
+    assert "Budget exhausted" in text
+    assert "done()" in text
+    assert len(tool_trace) == 2  # only 2 actual calls recorded
+
+
+@pytest.mark.asyncio
+async def test_budget_gate_does_not_block_done():
+    """done() should never be gated, even after budget is exhausted."""
+    tool_trace: list = []
+    available_memory_ids = {"m-1"}
+    result_holder: list = []
+
+    tools = build_reflect_tools(
+        search_mental_models_fn=None,
+        search_observations_fn=None,
+        recall_fn=None,
+        expand_fn=None,
+        available_memory_ids=available_memory_ids,
+        available_mental_model_ids=set(),
+        available_observation_ids=set(),
+        tool_trace=tool_trace,
+        result_holder=result_holder,
+        max_search_calls=0,  # budget already exhausted
+    )
+    done_tool = next(t for t in tools if t.name == "done")
+    result = await done_tool.handler({"answer": "My answer", "memory_ids": ["m-1"]})
+    assert "accepted" in _extract_text(result).lower()
+    assert len(result_holder) == 1
+
+
+@pytest.mark.asyncio
+async def test_budget_gate_unlimited_when_none():
+    """When max_search_calls is None, no budget limit is enforced."""
+    tool_trace: list = []
+
+    async def mock_recall(query: str, max_tokens: int, max_chunk_tokens: int):
+        return {"memories": [{"id": f"m-{len(tool_trace)}", "text": "fact"}]}
+
+    tools = build_reflect_tools(
+        search_mental_models_fn=None,
+        search_observations_fn=None,
+        recall_fn=mock_recall,
+        expand_fn=None,
+        available_memory_ids=set(),
+        available_mental_model_ids=set(),
+        available_observation_ids=set(),
+        tool_trace=tool_trace,
+        result_holder=[],
+        max_search_calls=None,  # unlimited
+    )
+    recall_tool = next(t for t in tools if t.name == "recall")
+
+    # Should allow many calls without gating
+    for i in range(20):
+        r = await recall_tool.handler({"reason": "t", "query": f"q{i}"})
+        assert "Budget exhausted" not in _extract_text(r)
+    assert len(tool_trace) == 20
+
+
 # ---------------------------------------------------------------------------
 # Task 3 — claude_reflect_agent() main function
 # ---------------------------------------------------------------------------

@@ -36,6 +36,12 @@ def _extract_ids_from_results(data: dict, key: str, id_field: str = "id") -> set
     return ids
 
 
+_BUDGET_EXHAUSTED_MSG = (
+    "Budget exhausted ({used}/{limit} tool calls used). "
+    "You MUST call done() now with your answer based on evidence gathered so far."
+)
+
+
 def build_reflect_tools(
     *,
     search_mental_models_fn: Callable | None,
@@ -47,11 +53,30 @@ def build_reflect_tools(
     available_observation_ids: set[str],
     tool_trace: list[ToolCall],
     result_holder: list[ReflectAgentResult],
+    max_search_calls: int | None = None,
 ) -> list[Any]:
-    """Build real MCP tool handlers as closures capturing shared mutable state."""
+    """Build real MCP tool handlers as closures capturing shared mutable state.
+
+    Args:
+        max_search_calls: Maximum number of search/recall/expand tool calls allowed.
+            When reached, tools return a budget-exhausted message forcing done().
+            None means unlimited.
+    """
     from claude_agent_sdk import SdkMcpTool
 
+    def _check_budget() -> dict[str, Any] | None:
+        """Return budget-exhausted result if limit reached, else None."""
+        if max_search_calls is not None and len(tool_trace) >= max_search_calls:
+            return _text_result(json.dumps({
+                "error": _BUDGET_EXHAUSTED_MSG.format(
+                    used=len(tool_trace), limit=max_search_calls,
+                ),
+            }))
+        return None
+
     async def search_mental_models_handler(args: dict) -> dict[str, Any]:
+        if (gate := _check_budget()) is not None:
+            return gate
         query = str(args.get("query", ""))
         max_results = int(args.get("max_results", 5))
         reason = str(args.get("reason", ""))
@@ -74,6 +99,8 @@ def build_reflect_tools(
             return _text_result(json.dumps({"error": str(exc)}))
 
     async def search_observations_handler(args: dict) -> dict[str, Any]:
+        if (gate := _check_budget()) is not None:
+            return gate
         query = str(args.get("query", ""))
         max_tokens = int(args.get("max_tokens", 5000))
         reason = str(args.get("reason", ""))
@@ -96,6 +123,8 @@ def build_reflect_tools(
             return _text_result(json.dumps({"error": str(exc)}))
 
     async def recall_handler(args: dict) -> dict[str, Any]:
+        if (gate := _check_budget()) is not None:
+            return gate
         query = str(args.get("query", ""))
         max_tokens = int(args.get("max_tokens", 2048))
         max_chunk_tokens = int(args.get("max_chunk_tokens", 1000))
@@ -119,6 +148,8 @@ def build_reflect_tools(
             return _text_result(json.dumps({"error": str(exc)}))
 
     async def expand_handler(args: dict) -> dict[str, Any]:
+        if (gate := _check_budget()) is not None:
+            return gate
         memory_ids = args.get("memory_ids", [])
         depth = str(args.get("depth", "chunk"))
         reason = str(args.get("reason", ""))
@@ -199,7 +230,7 @@ async def claude_reflect_agent(
     recall_fn: Callable[[str, int, int], Awaitable[dict[str, Any]]],
     expand_fn: Callable[[list[str], str], Awaitable[dict[str, Any]]],
     context: str | None = None,
-    max_iterations: int = 10,  # accepted for API parity; SDK manages turns internally
+    max_iterations: int = 10,
     max_tokens: int | None = None,  # accepted for API parity; not used by SDK path
     response_schema: dict | None = None,
     llm_config: LLMProvider | None = None,
@@ -210,6 +241,12 @@ async def claude_reflect_agent(
     """Run reflect agent using Claude SDK with real MCP tool handlers.
 
     Creates a ClaudeSDKClient per call. SDK auto-loops tool calls until done() is called.
+
+    Budget enforcement uses two layers:
+    - Layer 1 (tool-level gate): search/recall/expand tools return a budget-exhausted
+      message after ``max_search_calls`` calls, forcing the agent to call done().
+    - Layer 2 (max_turns safety net): SDK hard-stops after ``max_turns`` to prevent
+      infinite loops if the agent ignores the gate.
     """
     from claude_agent_sdk import (
         AssistantMessage,
@@ -218,6 +255,11 @@ async def claude_reflect_agent(
         TextBlock,
         create_sdk_mcp_server,
     )
+
+    # Budget: reserve 1 iteration for synthesis (done call), rest for search tools.
+    # max_turns adds buffer for done() call + potential retries.
+    max_search_calls = max(1, max_iterations - 1)
+    max_turns = max_iterations + 2
 
     # Shared mutable state for closures
     available_memory_ids: set[str] = set()
@@ -237,6 +279,7 @@ async def claude_reflect_agent(
         available_observation_ids=available_observation_ids,
         tool_trace=tool_trace,
         result_holder=result_holder,
+        max_search_calls=max_search_calls,
     )
 
     # Create in-process MCP server
@@ -259,6 +302,7 @@ async def claude_reflect_agent(
         system_prompt=system_prompt,
         mcp_servers={"hindsight": mcp_server},
         allowed_tools=[f"mcp__hindsight__{t.name}" for t in sdk_tools],
+        max_turns=max_turns,
     )
 
     fallback_text = ""
