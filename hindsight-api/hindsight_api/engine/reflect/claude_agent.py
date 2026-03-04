@@ -67,6 +67,9 @@ def build_reflect_tools(
     def _check_budget() -> dict[str, Any] | None:
         """Return budget-exhausted result if limit reached, else None."""
         if max_search_calls is not None and len(tool_trace) >= max_search_calls:
+            logger.info(
+                f"[reflect] budget gate triggered: {len(tool_trace)}/{max_search_calls} tool calls used"
+            )
             return _text_result(json.dumps({
                 "error": _BUDGET_EXHAUSTED_MSG.format(
                     used=len(tool_trace), limit=max_search_calls,
@@ -261,6 +264,11 @@ async def claude_reflect_agent(
     # Bash) that the agent uses to access large tool results from transcript files.
     max_search_calls = max(1, max_iterations - 1)
     max_turns = max_iterations * 3
+
+    logger.info(
+        f"[reflect] budget: max_iterations={max_iterations}, "
+        f"max_search_calls={max_search_calls}, max_turns={max_turns}"
+    )
 
     # Shared mutable state for closures
     available_memory_ids: set[str] = set()
