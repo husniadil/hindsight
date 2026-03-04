@@ -4584,6 +4584,8 @@ class MemoryEngine(MemoryEngineInterface):
                     directives=directives,
                     has_mental_models=has_mental_models,
                     budget=effective_budget,
+                    # Note: max_context_tokens intentionally omitted — SDK manages its
+                    # own context window, unlike run_reflect_agent which manually truncates.
                 )
             else:
                 agent_result = await run_reflect_agent(
