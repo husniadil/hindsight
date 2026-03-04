@@ -43,4 +43,5 @@ async def test_extract_facts_handler_empty_facts():
     tool = build_extract_facts_tool(all_facts=all_facts, chunk_metadata=chunk_metadata)
     result = await tool.handler({"facts": []})
     assert len(all_facts) == 0
-    assert "0 facts" in result.lower() or "extracted 0" in result.lower()
+    text = result["content"][0]["text"]
+    assert "0 facts" in text.lower() or "extracted 0" in text.lower()

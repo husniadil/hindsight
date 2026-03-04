@@ -27,7 +27,7 @@ def build_extract_facts_tool(
     """
     from claude_agent_sdk import SdkMcpTool
 
-    async def handler(args: dict[str, Any]) -> str:
+    async def handler(args: dict[str, Any]) -> dict[str, Any]:
         raw_facts = args.get("facts", [])
         parsed: list[Fact] = []
         for fact_data in raw_facts:
@@ -71,7 +71,7 @@ def build_extract_facts_tool(
                 chunk_index=len(chunk_metadata),
             )
         )
-        return f"Extracted {len(parsed)} facts."
+        return {"content": [{"type": "text", "text": f"Extracted {len(parsed)} facts."}]}
 
     return SdkMcpTool(
         name="extract_facts",

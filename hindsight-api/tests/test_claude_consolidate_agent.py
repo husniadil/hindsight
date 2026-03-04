@@ -15,7 +15,7 @@ async def test_consolidate_handler():
         "updates": [{"observation_id": "obs-1", "text": "Updated", "source_fact_ids": ["f-2"]}],
         "deletes": [{"observation_id": "obs-2"}],
     })
-    assert "accepted" in result.lower()
+    assert "accepted" in result["content"][0]["text"].lower()
     assert len(result_holder) == 1
     assert len(result_holder[0]["creates"]) == 1
     assert len(result_holder[0]["updates"]) == 1
@@ -28,7 +28,7 @@ async def test_consolidate_handler_empty():
 
     tool = build_consolidate_tool(result_holder=result_holder)
     result = await tool.handler({"creates": [], "updates": [], "deletes": []})
-    assert "accepted" in result.lower()
+    assert "accepted" in result["content"][0]["text"].lower()
     assert len(result_holder) == 1
     assert result_holder[0]["creates"] == []
     assert result_holder[0]["updates"] == []
@@ -42,7 +42,7 @@ async def test_consolidate_handler_missing_keys():
 
     tool = build_consolidate_tool(result_holder=result_holder)
     result = await tool.handler({})
-    assert "accepted" in result.lower()
+    assert "accepted" in result["content"][0]["text"].lower()
     assert len(result_holder) == 1
     assert result_holder[0]["creates"] == []
     assert result_holder[0]["updates"] == []

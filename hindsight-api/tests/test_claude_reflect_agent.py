@@ -6,6 +6,11 @@ import pytest
 from hindsight_api.engine.reflect.claude_agent import build_reflect_tools
 
 
+def _extract_text(result: dict) -> str:
+    """Extract text from SDK-compatible tool result dict."""
+    return result["content"][0]["text"]
+
+
 @pytest.mark.asyncio
 async def test_search_mental_models_handler():
     available_mental_model_ids: set[str] = set()
@@ -27,7 +32,7 @@ async def test_search_mental_models_handler():
     )
     smm_tool = next(t for t in tools if t.name == "search_mental_models")
     result = await smm_tool.handler({"reason": "test", "query": "patterns", "max_results": 3})
-    data = json.loads(result)
+    data = json.loads(_extract_text(result))
     assert data["mental_models"][0]["id"] == "mm-1"
     assert "mm-1" in available_mental_model_ids
     assert len(tool_trace) == 1
@@ -54,7 +59,8 @@ async def test_done_handler_validates_ids():
         "answer": "The answer is X.",
         "memory_ids": ["m-1", "m-999"],  # m-999 not in available
     })
-    assert "accepted" in result.lower()
+    text = _extract_text(result)
+    assert "accepted" in text.lower()
     assert len(result_holder) == 1
     assert "m-1" in result_holder[0].used_memory_ids
     assert "m-999" not in result_holder[0].used_memory_ids
@@ -77,7 +83,8 @@ async def test_done_handler_blocks_without_evidence():
     )
     done_tool = next(t for t in tools if t.name == "done")
     result = await done_tool.handler({"answer": "No evidence answer"})
-    assert "error" in result.lower() or "search" in result.lower()
+    text = _extract_text(result)
+    assert "error" in text.lower() or "search" in text.lower()
     assert len(result_holder) == 0  # not stored
 
 
@@ -101,7 +108,7 @@ async def test_recall_handler():
     )
     recall_tool = next(t for t in tools if t.name == "recall")
     result = await recall_tool.handler({"reason": "need facts", "query": "test"})
-    data = json.loads(result)
+    data = json.loads(_extract_text(result))
     assert "memories" in data
     assert "m-1" in available_memory_ids
 
@@ -109,7 +116,6 @@ async def test_recall_handler():
 # ---------------------------------------------------------------------------
 # Task 3 — claude_reflect_agent() main function
 # ---------------------------------------------------------------------------
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from hindsight_api.engine.reflect.claude_agent import claude_reflect_agent
@@ -132,7 +138,7 @@ async def test_claude_reflect_agent_calls_sdk():
         return {"expanded": []}
 
     with patch("hindsight_api.engine.reflect.claude_agent.ClaudeSDKClient") as MockClient, \
-         patch("hindsight_api.engine.reflect.claude_agent._get_semaphore") as mock_sem:
+         patch("hindsight_api.engine.reflect.claude_agent.get_claude_sdk_semaphore") as mock_sem:
 
         # Setup semaphore mock as async context manager
         sem_mock = MagicMock()
@@ -147,13 +153,13 @@ async def test_claude_reflect_agent_calls_sdk():
         # receive_messages() needs to be an async generator
         async def fake_receive_messages():
             yield ResultMessage(
-            subtype="success",
-            duration_ms=100,
-            duration_api_ms=100,
-            is_error=False,
-            num_turns=1,
-            session_id="test-session",
-        )
+                subtype="success",
+                duration_ms=100,
+                duration_api_ms=100,
+                is_error=False,
+                num_turns=1,
+                session_id="test-session",
+            )
 
         mock_client_instance.receive_messages = fake_receive_messages
 

@@ -29,7 +29,7 @@ def build_consolidate_tool(*, result_holder: list[dict[str, Any]]) -> Any:
     """
     from claude_agent_sdk import SdkMcpTool
 
-    async def handler(args: dict[str, Any]) -> str:
+    async def handler(args: dict[str, Any]) -> dict[str, Any]:
         creates = args.get("creates") or []
         updates = args.get("updates") or []
         deletes = args.get("deletes") or []
@@ -43,10 +43,17 @@ def build_consolidate_tool(*, result_holder: list[dict[str, Any]]) -> Any:
         n_creates = len(creates)
         n_updates = len(updates)
         n_deletes = len(deletes)
-        return (
-            f"Consolidation accepted. "
-            f"{n_creates} create(s), {n_updates} update(s), {n_deletes} delete(s) recorded."
-        )
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        f"Consolidation accepted. "
+                        f"{n_creates} create(s), {n_updates} update(s), {n_deletes} delete(s) recorded."
+                    ),
+                }
+            ]
+        }
 
     return SdkMcpTool(
         name="consolidate",
