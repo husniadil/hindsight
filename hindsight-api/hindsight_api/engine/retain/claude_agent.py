@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from ..claude_sdk_utils import get_claude_sdk_semaphore
+from ..claude_sdk_utils import get_claude_sdk_semaphore, log_sdk_messages
 from .fact_extraction import Entity, Fact, chunk_text, _build_user_message
 from .types import ChunkMetadata
 
@@ -16,6 +16,7 @@ def build_extract_facts_tool(
     *,
     all_facts: list[Fact],
     chunk_metadata: list[ChunkMetadata],
+    current_chunk: list[str],
 ) -> Any:
     """Build extract_facts tool with lenient handler.
 
@@ -65,7 +66,7 @@ def build_extract_facts_tool(
         all_facts.extend(parsed)
         chunk_metadata.append(
             ChunkMetadata(
-                chunk_text="",
+                chunk_text=current_chunk[0] if current_chunk else "",
                 fact_count=len(parsed),
                 content_index=0,
                 chunk_index=len(chunk_metadata),
@@ -137,15 +138,15 @@ async def claude_retain_agent(
     from claude_agent_sdk import (
         ClaudeAgentOptions,
         ClaudeSDKClient,
-        ResultMessage,
         create_sdk_mcp_server,
     )
 
     chunks = chunk_text(text, max_chars=config.retain_chunk_size)
     all_facts: list[Fact] = []
     chunk_metadata: list[ChunkMetadata] = []
+    current_chunk: list[str] = [""]
 
-    tool = build_extract_facts_tool(all_facts=all_facts, chunk_metadata=chunk_metadata)
+    tool = build_extract_facts_tool(all_facts=all_facts, chunk_metadata=chunk_metadata, current_chunk=current_chunk)
     mcp_server = create_sdk_mcp_server(name="hindsight_retain", version="1.0.0", tools=[tool])
 
     system_prompt = (
@@ -167,6 +168,7 @@ async def claude_retain_agent(
     async with get_claude_sdk_semaphore():
         async with ClaudeSDKClient(options=options) as client:
             for i, chunk in enumerate(chunks):
+                current_chunk[0] = chunk
                 user_msg = _build_user_message(
                     chunk=chunk,
                     chunk_index=i,
@@ -176,8 +178,7 @@ async def claude_retain_agent(
                     metadata=metadata,
                 )
                 await client.query(user_msg)
-                async for msg in client.receive_messages():
-                    if isinstance(msg, ResultMessage):
-                        break
+                async for msg in client.receive_response():
+                    log_sdk_messages(msg, agent_name="retain", log=logger)
 
     return all_facts, chunk_metadata, {}

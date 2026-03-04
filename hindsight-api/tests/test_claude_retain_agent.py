@@ -16,6 +16,7 @@ async def test_extract_facts_handler_lenient_parsing():
     tool = build_extract_facts_tool(
         all_facts=all_facts,
         chunk_metadata=chunk_metadata,
+        current_chunk=["test chunk text"],
     )
     # Simulate Claude calling with slightly imperfect data
     result = await tool.handler({
@@ -30,6 +31,7 @@ async def test_extract_facts_handler_lenient_parsing():
     assert all_facts[1].fact_type == "world"  # auto-fixed
     assert all_facts[2].fact == "Fallback field name"
     assert len(chunk_metadata) == 1
+    assert chunk_metadata[0].chunk_text == "test chunk text"
 
 
 @pytest.mark.asyncio
@@ -40,7 +42,7 @@ async def test_extract_facts_handler_empty_facts():
     all_facts: list[Fact] = []
     chunk_metadata: list[ChunkMetadata] = []
 
-    tool = build_extract_facts_tool(all_facts=all_facts, chunk_metadata=chunk_metadata)
+    tool = build_extract_facts_tool(all_facts=all_facts, chunk_metadata=chunk_metadata, current_chunk=[""])
     result = await tool.handler({"facts": []})
     assert len(all_facts) == 0
     text = result["content"][0]["text"]

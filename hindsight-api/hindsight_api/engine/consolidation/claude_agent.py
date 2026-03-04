@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..claude_sdk_utils import get_claude_sdk_semaphore
+from ..claude_sdk_utils import get_claude_sdk_semaphore, log_sdk_messages
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +200,6 @@ async def claude_consolidate_agent(
     from claude_agent_sdk import (
         ClaudeAgentOptions,
         ClaudeSDKClient,
-        ResultMessage,
         create_sdk_mcp_server,
     )
 
@@ -224,9 +223,8 @@ async def claude_consolidate_agent(
     async with get_claude_sdk_semaphore():
         async with ClaudeSDKClient(options=options) as client:
             await client.query(user_message)
-            async for msg in client.receive_messages():
-                if isinstance(msg, ResultMessage):
-                    break
+            async for msg in client.receive_response():
+                log_sdk_messages(msg, agent_name="consolidation", log=logger)
 
     if result_holder:
         return result_holder[0]

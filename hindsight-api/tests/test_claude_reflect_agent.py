@@ -137,7 +137,7 @@ async def test_claude_reflect_agent_calls_sdk():
     async def mock_expand(ids: list, depth: str):
         return {"expanded": []}
 
-    with patch("hindsight_api.engine.reflect.claude_agent.ClaudeSDKClient") as MockClient, \
+    with patch("claude_agent_sdk.ClaudeSDKClient") as MockClient, \
          patch("hindsight_api.engine.reflect.claude_agent.get_claude_sdk_semaphore") as mock_sem:
 
         # Setup semaphore mock as async context manager
@@ -150,8 +150,8 @@ async def test_claude_reflect_agent_calls_sdk():
         from claude_agent_sdk import ResultMessage
         mock_client_instance = AsyncMock()
 
-        # receive_messages() needs to be an async generator
-        async def fake_receive_messages():
+        # receive_response() yields messages up to and including ResultMessage
+        async def fake_receive_response():
             yield ResultMessage(
                 subtype="success",
                 duration_ms=100,
@@ -161,7 +161,7 @@ async def test_claude_reflect_agent_calls_sdk():
                 session_id="test-session",
             )
 
-        mock_client_instance.receive_messages = fake_receive_messages
+        mock_client_instance.receive_response = fake_receive_response
 
         # Context manager protocol
         MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)

@@ -10,7 +10,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
-from ..claude_sdk_utils import get_claude_sdk_semaphore
+from ..claude_sdk_utils import get_claude_sdk_semaphore, log_sdk_messages
 
 if TYPE_CHECKING:
     from ..llm_wrapper import LLMProvider
@@ -215,7 +215,6 @@ async def claude_reflect_agent(
         AssistantMessage,
         ClaudeAgentOptions,
         ClaudeSDKClient,
-        ResultMessage,
         TextBlock,
         create_sdk_mcp_server,
     )
@@ -267,21 +266,19 @@ async def claude_reflect_agent(
     async with get_claude_sdk_semaphore():
         async with ClaudeSDKClient(options=options) as client:
             await client.query(query)
-            async for msg in client.receive_messages():
+            async for msg in client.receive_response():
+                log_sdk_messages(msg, agent_name="reflect", log=logger)
                 if isinstance(msg, AssistantMessage):
-                    # Capture last assistant text as fallback
                     for block in msg.content:
                         if isinstance(block, TextBlock):
                             fallback_text = block.text
-                if isinstance(msg, ResultMessage):
-                    break
 
     # Return result from done() handler, or fallback
     if result_holder:
         result = result_holder[0]
     else:
         # Fallback: max_turns hit without done() — use last assistant text
-        logger.warning("Claude reflect agent hit max_turns without calling done()")
+        logger.warning("Claude reflect agent completed without calling done()")
         result = ReflectAgentResult(
             text=fallback_text.strip() if fallback_text else "I could not find relevant information.",
             used_memory_ids=list(available_memory_ids),
