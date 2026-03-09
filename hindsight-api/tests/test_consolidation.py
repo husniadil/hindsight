@@ -5,11 +5,17 @@ Note: Consolidation runs automatically after retain via SyncTaskBackend in tests
 """
 
 import uuid
-from unittest.mock import patch
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, call, patch
 
 import pytest
 
-from hindsight_api.engine.consolidation.consolidator import run_consolidation_job
+from hindsight_api.config import _get_raw_config
+from hindsight_api.engine.consolidation.consolidator import (
+    _aggregate_source_fields,
+    _find_related_observations,
+    run_consolidation_job,
+)
 from hindsight_api.engine.memory_engine import MemoryEngine
 from hindsight_api.engine.reflect.tools import (
     tool_recall,
@@ -2317,3 +2323,178 @@ async def test_observation_scopes_all_combinations(memory: MemoryEngine, request
         assert combined, f"Expected an observation scoped to both tags, got: {tag_sets}"
     finally:
         await memory.delete_bank(bank_id, request_context=request_context)
+
+
+def _dt(year: int, month: int, day: int) -> datetime:
+    return datetime(year, month, day, tzinfo=timezone.utc)
+
+
+class TestAggregateSourceFields:
+    """Unit tests for _aggregate_source_fields – no database required."""
+
+    def test_all_none_temporal_fields_stay_none(self):
+        """When source memories carry no temporal data, all fields must remain None."""
+        source_mems = [
+            {"tags": ["t1"], "event_date": None, "occurred_start": None, "occurred_end": None, "mentioned_at": None},
+            {"tags": ["t1"], "event_date": None, "occurred_start": None, "occurred_end": None, "mentioned_at": None},
+        ]
+        agg = _aggregate_source_fields(source_mems)
+        assert agg.event_date is None
+        assert agg.occurred_start is None
+        assert agg.occurred_end is None
+        assert agg.mentioned_at is None
+
+    def test_temporal_fields_aggregated_correctly(self):
+        """occurred_start and event_date are minimised; occurred_end and mentioned_at are maximised."""
+        early = _dt(2023, 1, 1)
+        late = _dt(2024, 6, 15)
+        source_mems = [
+            {
+                "tags": [],
+                "event_date": late,
+                "occurred_start": late,
+                "occurred_end": early,
+                "mentioned_at": early,
+            },
+            {
+                "tags": [],
+                "event_date": early,
+                "occurred_start": early,
+                "occurred_end": late,
+                "mentioned_at": late,
+            },
+        ]
+        agg = _aggregate_source_fields(source_mems)
+        assert agg.event_date == early
+        assert agg.occurred_start == early
+        assert agg.occurred_end == late
+        assert agg.mentioned_at == late
+
+    def test_partial_temporal_fields_ignored_when_none(self):
+        """None values in individual sources do not corrupt the min/max from sources that do have dates."""
+        d = _dt(2023, 3, 10)
+        source_mems = [
+            {"tags": [], "event_date": None, "occurred_start": None, "occurred_end": None, "mentioned_at": None},
+            {"tags": [], "event_date": d, "occurred_start": d, "occurred_end": d, "mentioned_at": d},
+        ]
+        agg = _aggregate_source_fields(source_mems)
+        assert agg.event_date == d
+        assert agg.occurred_start == d
+        assert agg.occurred_end == d
+        assert agg.mentioned_at == d
+
+    def test_tags_inherited_from_first_source_memory(self):
+        """Tags default to those of the first source memory (batch invariant)."""
+        source_mems = [
+            {"tags": ["user:alice"], "event_date": None, "occurred_start": None, "occurred_end": None, "mentioned_at": None},
+            {"tags": ["user:alice"], "event_date": None, "occurred_start": None, "occurred_end": None, "mentioned_at": None},
+        ]
+        agg = _aggregate_source_fields(source_mems)
+        assert agg.tags == ["user:alice"]
+
+    def test_tags_override_takes_precedence(self):
+        """Explicit tags parameter overrides the source-memory tags."""
+        source_mems = [
+            {"tags": ["user:alice"], "event_date": None, "occurred_start": None, "occurred_end": None, "mentioned_at": None},
+        ]
+        agg = _aggregate_source_fields(source_mems, tags=["scope:override"])
+        assert agg.tags == ["scope:override"]
+
+    def test_empty_tags_override_is_respected(self):
+        """An explicit empty list override must not fall back to source tags."""
+        source_mems = [
+            {"tags": ["user:alice"], "event_date": None, "occurred_start": None, "occurred_end": None, "mentioned_at": None},
+        ]
+        agg = _aggregate_source_fields(source_mems, tags=[])
+        assert agg.tags == []
+
+    def test_single_source_memory(self):
+        """Single-source aggregation should just pass through that memory's fields."""
+        d = _dt(2024, 11, 5)
+        source_mems = [
+            {"tags": ["x"], "event_date": d, "occurred_start": d, "occurred_end": d, "mentioned_at": d},
+        ]
+        agg = _aggregate_source_fields(source_mems)
+        assert agg.event_date == d
+        assert agg.occurred_start == d
+        assert agg.occurred_end == d
+        assert agg.mentioned_at == d
+        assert agg.tags == ["x"]
+
+
+class TestConsolidationSourceFactsConfig:
+    """Tests that consolidation uses the source_facts token config when calling recall."""
+
+    @pytest.fixture(autouse=True)
+    def enable_observations(self):
+        config = _get_raw_config()
+        original = config.enable_observations
+        config.enable_observations = True
+        yield
+        config.enable_observations = original
+
+    @pytest.mark.asyncio
+    async def test_consolidation_passes_source_facts_max_tokens_to_recall(
+        self, memory: MemoryEngine, request_context
+    ):
+        """consolidation_source_facts_max_tokens from config is forwarded to recall_async."""
+        bank_id = f"test-sf-config-total-{uuid.uuid4().hex[:8]}"
+        await memory.get_bank_profile(bank_id=bank_id, request_context=request_context)
+
+        raw = _get_raw_config()
+        fake_config = type(raw)(**{
+            **{f: getattr(raw, f) for f in raw.__dataclass_fields__},
+            "consolidation_source_facts_max_tokens": 999,
+            "consolidation_source_facts_max_tokens_per_observation": -1,
+        })
+
+        try:
+            with (
+                patch.object(memory._config_resolver, "resolve_full_config", return_value=fake_config),
+                patch.object(memory, "recall_async", wraps=memory.recall_async) as mock_recall,
+            ):
+                await _find_related_observations(
+                    memory_engine=memory,
+                    bank_id=bank_id,
+                    query="test query",
+                    request_context=request_context,
+                )
+                assert mock_recall.called
+                _, kwargs = mock_recall.call_args
+                assert kwargs.get("max_source_facts_tokens") == 999
+                assert kwargs.get("max_source_facts_tokens_per_observation") == -1
+        finally:
+            await memory.delete_bank(bank_id, request_context=request_context)
+
+    @pytest.mark.asyncio
+    async def test_consolidation_passes_source_facts_per_obs_tokens_to_recall(
+        self, memory: MemoryEngine, request_context
+    ):
+        """consolidation_source_facts_max_tokens_per_observation from config is forwarded to recall_async."""
+        bank_id = f"test-sf-config-per-obs-{uuid.uuid4().hex[:8]}"
+        await memory.get_bank_profile(bank_id=bank_id, request_context=request_context)
+
+        raw = _get_raw_config()
+        fake_config = type(raw)(**{
+            **{f: getattr(raw, f) for f in raw.__dataclass_fields__},
+            "consolidation_source_facts_max_tokens": -1,
+            "consolidation_source_facts_max_tokens_per_observation": 128,
+        })
+
+        try:
+            with (
+                patch.object(memory._config_resolver, "resolve_full_config", return_value=fake_config),
+                patch.object(memory, "recall_async", wraps=memory.recall_async) as mock_recall,
+            ):
+                await _find_related_observations(
+                    memory_engine=memory,
+                    bank_id=bank_id,
+                    query="test query",
+                    request_context=request_context,
+                )
+                assert mock_recall.called
+                _, kwargs = mock_recall.call_args
+                assert kwargs.get("max_source_facts_tokens") == -1
+                assert kwargs.get("max_source_facts_tokens_per_observation") == 128
+        finally:
+            await memory.delete_bank(bank_id, request_context=request_context)

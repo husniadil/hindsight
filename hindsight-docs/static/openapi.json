@@ -10,7 +10,7 @@
       "name": "Apache 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "version": "0.4.15"
+    "version": "0.4.16"
   },
   "paths": {
     "/health": {
@@ -322,8 +322,74 @@
           "Memory"
         ],
         "summary": "Get memory unit",
-        "description": "Get a single memory unit by ID with all its metadata including entities and tags.",
+        "description": "Get a single memory unit by ID with all its metadata including entities and tags. Note: the 'history' field is deprecated and always returns an empty list - use GET /memories/{memory_id}/history instead.",
         "operationId": "get_memory",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Memory Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/default/banks/{bank_id}/memories/{memory_id}/history": {
+      "get": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Get observation history",
+        "description": "Get the full history of an observation, with each change's source facts resolved to their text.",
+        "operationId": "get_observation_history",
         "parameters": [
           {
             "name": "bank_id",
@@ -1244,6 +1310,72 @@
         }
       }
     },
+    "/v1/default/banks/{bank_id}/mental-models/{mental_model_id}/history": {
+      "get": {
+        "tags": [
+          "Mental Models"
+        ],
+        "summary": "Get mental model history",
+        "description": "Get the refresh history of a mental model, showing content changes over time.",
+        "operationId": "get_mental_model_history",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "mental_model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mental Model Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/default/banks/{bank_id}/mental-models/{mental_model_id}/refresh": {
       "post": {
         "tags": [
@@ -1916,6 +2048,82 @@
           }
         }
       },
+      "patch": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Update document",
+        "description": "Update mutable fields on a document without re-processing its content.\n\n**Tags** (`tags`): Propagated to all associated memory units. Observations derived from those units are invalidated and queued for re-consolidation under the new tags. Co-source memories from other documents that shared those observations are also reset.\n\nAt least one field must be provided.",
+        "operationId": "update_document",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDocumentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateDocumentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [
           "Documents"
@@ -2149,7 +2357,7 @@
           "Operations"
         ],
         "summary": "List async operations",
-        "description": "Get a list of async operations for a specific agent, with optional filtering by status. Results are sorted by most recent first.",
+        "description": "Get a list of async operations for a specific agent, with optional filtering by status and operation type. Results are sorted by most recent first.",
         "operationId": "list_operations",
         "parameters": [
           {
@@ -2178,6 +2386,24 @@
               "title": "Status"
             },
             "description": "Filter by status: pending, completed, or failed"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by operation type: retain, consolidation, refresh_mental_model, file_convert_retain, webhook_delivery",
+              "title": "Type"
+            },
+            "description": "Filter by operation type: retain, consolidation, refresh_mental_model, file_convert_retain, webhook_delivery"
           },
           {
             "name": "limit",
@@ -3141,6 +3367,375 @@
         }
       }
     },
+    "/v1/default/banks/{bank_id}/webhooks": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Register webhook",
+        "description": "Register a webhook endpoint to receive event notifications for this bank.",
+        "operationId": "create_webhook",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWebhookRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "List webhooks",
+        "description": "List all webhooks registered for a bank.",
+        "operationId": "list_webhooks",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/default/banks/{bank_id}/webhooks/{webhook_id}": {
+      "delete": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Delete webhook",
+        "description": "Remove a registered webhook.",
+        "operationId": "delete_webhook",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "webhook_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Webhook Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Update webhook",
+        "description": "Update one or more fields of a registered webhook. Only provided fields are changed.",
+        "operationId": "update_webhook",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "webhook_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Webhook Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWebhookRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/default/banks/{bank_id}/webhooks/{webhook_id}/deliveries": {
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "List webhook deliveries",
+        "description": "Inspect delivery history for a webhook (useful for debugging).",
+        "operationId": "list_webhook_deliveries",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "webhook_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Webhook Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "description": "Maximum number of deliveries to return",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Maximum number of deliveries to return"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Pagination cursor (created_at of last item)",
+              "title": "Cursor"
+            },
+            "description": "Pagination cursor (created_at of last item)"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/default/banks/{bank_id}/memories": {
       "post": {
         "tags": [
@@ -3291,7 +3886,7 @@
           "Files"
         ],
         "summary": "Convert files to memories",
-        "description": "Upload files (PDF, DOCX, etc.), convert them to markdown, and retain as memories.\n\nThis endpoint handles file upload, conversion, and memory creation in a single operation.\n\n**Features:**\n- Supports PDF, DOCX, PPTX, XLSX, images (with OCR), audio (with transcription)\n- Automatic file-to-markdown conversion using pluggable parsers\n- Files stored in object storage (PostgreSQL by default, S3 for production)\n- Each file becomes a separate document with optional metadata/tags\n- Always processes asynchronously \u2014 returns operation IDs immediately\n\n**The system automatically:**\n1. Stores uploaded files in object storage\n2. Converts files to markdown\n3. Creates document records with file metadata\n4. Extracts facts and creates memory units (same as regular retain)\n\nUse the operations endpoint to monitor progress.\n\n**Request format:** multipart/form-data with:\n- `files`: One or more files to upload\n- `request`: JSON string with FileRetainRequest model (files_metadata)\n\n**Note:** File parser is configured server-side via `HINDSIGHT_API_FILE_PARSER` (default: markitdown).",
+        "description": "Upload files (PDF, DOCX, etc.), convert them to markdown, and retain as memories.\n\nThis endpoint handles file upload, conversion, and memory creation in a single operation.\n\n**Features:**\n- Supports PDF, DOCX, PPTX, XLSX, images (with OCR), audio (with transcription)\n- Automatic file-to-markdown conversion using pluggable parsers\n- Files stored in object storage (PostgreSQL by default, S3 for production)\n- Each file becomes a separate document with optional metadata/tags\n- Always processes asynchronously \u2014 returns operation IDs immediately\n\n**The system automatically:**\n1. Stores uploaded files in object storage\n2. Converts files to markdown\n3. Creates document records with file metadata\n4. Extracts facts and creates memory units (same as regular retain)\n\nUse the operations endpoint to monitor progress.\n\n**Request format:** multipart/form-data with:\n- `files`: One or more files to upload\n- `request`: JSON string with FileRetainRequest model\n\n**Parser selection:**\n- Set `parser` in the request body to override the server default for all files.\n- Set `parser` inside a `files_metadata` entry for per-file control.\n- Pass a list (e.g. `['iris', 'markitdown']`) to define an ordered fallback chain \u2014 each parser is tried in sequence until one succeeds.\n- Falls back to the server default (`HINDSIGHT_API_FILE_PARSER`) if not specified.\n- Only parsers enabled on the server may be requested; others return HTTP 400.",
         "operationId": "file_retain",
         "parameters": [
           {
@@ -4347,6 +4942,54 @@
         ],
         "title": "CreateMentalModelResponse",
         "description": "Response model for mental model creation."
+      },
+      "CreateWebhookRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "HTTP(S) endpoint URL to deliver events to"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret",
+            "description": "HMAC-SHA256 signing secret (optional)"
+          },
+          "event_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Event Types",
+            "description": "List of event types to deliver. Currently supported: 'consolidation.completed'",
+            "default": [
+              "consolidation.completed"
+            ]
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Whether this webhook is active",
+            "default": true
+          },
+          "http_config": {
+            "$ref": "#/components/schemas/WebhookHttpConfig",
+            "description": "HTTP delivery configuration (method, timeout, headers, params)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "CreateWebhookRequest",
+        "description": "Request model for registering a webhook."
       },
       "DeleteDocumentResponse": {
         "properties": {
@@ -6793,8 +7436,14 @@
           "max_tokens": {
             "type": "integer",
             "title": "Max Tokens",
-            "description": "Maximum tokens for source facts",
+            "description": "Maximum total tokens for source facts across all observations (-1 = unlimited)",
             "default": 4096
+          },
+          "max_tokens_per_observation": {
+            "type": "integer",
+            "title": "Max Tokens Per Observation",
+            "description": "Maximum tokens of source facts per observation (-1 = unlimited)",
+            "default": -1
           }
         },
         "type": "object",
@@ -6948,6 +7597,46 @@
         "title": "UpdateDispositionRequest",
         "description": "Request model for updating disposition traits."
       },
+      "UpdateDocumentRequest": {
+        "properties": {
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags",
+            "description": "New tags for the document and its memory units. Triggers observation invalidation and re-consolidation."
+          }
+        },
+        "type": "object",
+        "title": "UpdateDocumentRequest",
+        "description": "Request model for updating a document's mutable fields.",
+        "example": {
+          "tags": [
+            "team-a",
+            "team-b"
+          ]
+        }
+      },
+      "UpdateDocumentResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "UpdateDocumentResponse",
+        "description": "Response model for update document endpoint."
+      },
       "UpdateMentalModelRequest": {
         "properties": {
           "name": {
@@ -7031,6 +7720,75 @@
           }
         }
       },
+      "UpdateWebhookRequest": {
+        "properties": {
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "HTTP(S) endpoint URL"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret",
+            "description": "HMAC-SHA256 signing secret. Omit to keep existing; send null to clear."
+          },
+          "event_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Types",
+            "description": "List of event types"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled",
+            "description": "Whether this webhook is active"
+          },
+          "http_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WebhookHttpConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "HTTP delivery configuration"
+          }
+        },
+        "type": "object",
+        "title": "UpdateWebhookRequest",
+        "description": "Request model for updating a webhook. Only provided fields are updated."
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -7093,6 +7851,290 @@
             "worker": true
           }
         }
+      },
+      "WebhookDeliveryListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookDeliveryResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "WebhookDeliveryListResponse",
+        "description": "Response model for listing webhook deliveries."
+      },
+      "WebhookDeliveryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "webhook_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts"
+          },
+          "next_retry_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Retry At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_response_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Response Status"
+          },
+          "last_response_body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Response Body"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "webhook_id",
+          "url",
+          "event_type",
+          "status",
+          "attempts"
+        ],
+        "title": "WebhookDeliveryResponse",
+        "description": "Response model for a webhook delivery record."
+      },
+      "WebhookHttpConfig": {
+        "properties": {
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "description": "HTTP method: GET or POST",
+            "default": "POST"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "title": "Timeout Seconds",
+            "description": "HTTP request timeout in seconds",
+            "default": 30
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Headers",
+            "description": "Custom HTTP headers"
+          },
+          "params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Params",
+            "description": "Custom HTTP query parameters"
+          }
+        },
+        "type": "object",
+        "title": "WebhookHttpConfig",
+        "description": "HTTP delivery configuration for a webhook."
+      },
+      "WebhookListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "WebhookListResponse",
+        "description": "Response model for listing webhooks."
+      },
+      "WebhookResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "bank_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bank Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret",
+            "description": "Signing secret (redacted in responses)"
+          },
+          "event_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Event Types"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "http_config": {
+            "$ref": "#/components/schemas/WebhookHttpConfig"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "bank_id",
+          "url",
+          "event_types",
+          "enabled"
+        ],
+        "title": "WebhookResponse",
+        "description": "Response model for a webhook."
       }
     }
   }

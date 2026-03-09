@@ -62,7 +62,7 @@ class IrisParser(FileParser):
         """
         content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=120.0)) as client:
             # Step 1: Request a presigned upload URL
             init_resp = await client.post(
                 f"{_IRIS_BASE_URL}/org/{self._org_id}/files",
@@ -75,9 +75,10 @@ class IrisParser(FileParser):
             upload_url: str = init_data["uploadUrl"]
 
             # Step 2: Upload the file bytes to the presigned URL (no auth header)
+            # Ensure file_data is plain bytes (GCS storage may return obstore.Bytes)
             upload_resp = await client.put(
                 upload_url,
-                content=file_data,
+                content=bytes(file_data),
                 headers={"Content-Type": content_type},
             )
             _raise_for_status(upload_resp, filename, "file upload")
