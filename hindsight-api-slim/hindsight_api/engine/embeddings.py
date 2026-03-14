@@ -36,6 +36,7 @@ from ..config import (
     ENV_EMBEDDINGS_LOCAL_TRUST_REMOTE_CODE,
     ENV_EMBEDDINGS_OPENAI_API_KEY,
     ENV_EMBEDDINGS_OPENAI_BASE_URL,
+    ENV_EMBEDDINGS_OPENAI_DIMENSIONS,
     ENV_EMBEDDINGS_OPENAI_MODEL,
     ENV_EMBEDDINGS_PROVIDER,
     ENV_EMBEDDINGS_TEI_URL,
@@ -386,6 +387,7 @@ class OpenAIEmbeddings(Embeddings):
         base_url: str | None = None,
         batch_size: int = 100,
         max_retries: int = 3,
+        dimensions: int | None = None,
     ):
         """
         Initialize OpenAI embeddings client.
@@ -396,12 +398,15 @@ class OpenAIEmbeddings(Embeddings):
             base_url: Custom base URL for OpenAI-compatible API (e.g., Azure OpenAI endpoint)
             batch_size: Maximum batch size for embedding requests (default: 100)
             max_retries: Maximum number of retries for failed requests (default: 3)
+            dimensions: Output dimensions for Matryoshka-capable models (e.g., text-embedding-3-large).
+                        If set, truncates embeddings to the specified number of dimensions.
         """
         self.api_key = api_key
         self.model = model
         self.base_url = base_url
         self.batch_size = batch_size
         self.max_retries = max_retries
+        self.dimensions = dimensions
         self._client = None
         self._dimension: int | None = None
 
@@ -444,8 +449,10 @@ class OpenAIEmbeddings(Embeddings):
                 client_kwargs["base_url"] = self.base_url
         self._client = OpenAI(**client_kwargs)
 
-        # Try to get dimension from known models, otherwise do a test embedding
-        if self.model in self.MODEL_DIMENSIONS:
+        # If custom dimensions requested (Matryoshka), use that directly
+        if self.dimensions is not None:
+            self._dimension = self.dimensions
+        elif self.model in self.MODEL_DIMENSIONS:
             self._dimension = self.MODEL_DIMENSIONS[self.model]
         else:
             # Do a test embedding to detect dimension
@@ -456,7 +463,8 @@ class OpenAIEmbeddings(Embeddings):
             if response.data:
                 self._dimension = len(response.data[0].embedding)
 
-        logger.info(f"Embeddings: OpenAI provider initialized (model: {self.model}, dim: {self._dimension})")
+        dims_msg = f", custom dimensions: {self.dimensions}" if self.dimensions else ""
+        logger.info(f"Embeddings: OpenAI provider initialized (model: {self.model}, dim: {self._dimension}{dims_msg})")
 
     def encode(self, texts: list[str]) -> list[list[float]]:
         """
@@ -480,10 +488,10 @@ class OpenAIEmbeddings(Embeddings):
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i : i + self.batch_size]
 
-            response = self._client.embeddings.create(
-                model=self.model,
-                input=batch,
-            )
+            create_kwargs = {"model": self.model, "input": batch}
+            if self.dimensions is not None:
+                create_kwargs["dimensions"] = self.dimensions
+            response = self._client.embeddings.create(**create_kwargs)
 
             # Sort by index to ensure correct order
             batch_embeddings = sorted(response.data, key=lambda x: x.index)
@@ -1100,7 +1108,9 @@ def create_embeddings_from_env() -> Embeddings:
             )
         model = os.environ.get(ENV_EMBEDDINGS_OPENAI_MODEL, DEFAULT_EMBEDDINGS_OPENAI_MODEL)
         base_url = os.environ.get(ENV_EMBEDDINGS_OPENAI_BASE_URL) or None
-        return OpenAIEmbeddings(api_key=api_key, model=model, base_url=base_url)
+        dimensions_str = os.environ.get(ENV_EMBEDDINGS_OPENAI_DIMENSIONS)
+        dimensions = int(dimensions_str) if dimensions_str else None
+        return OpenAIEmbeddings(api_key=api_key, model=model, base_url=base_url, dimensions=dimensions)
     elif provider == "openrouter":
         api_key = config.embeddings_openrouter_api_key
         if not api_key:
